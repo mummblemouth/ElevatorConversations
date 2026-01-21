@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Elevator Conversation Cards</title>
+  <style>
+    :root { --pad: 16px; --radius: 14px; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #f7f7f8; color: #111;
+    }
+    header {
+      padding: 18px var(--pad) 10px; background: white; position: sticky; top: 0; z-index: 10;
+      border-bottom: 1px solid rgba(0,0,0,.08);
+    }
+    h1 { margin: 0 0 6px; font-size: 18px; }
+    .sub { margin: 0; font-size: 13px; color: #444; }
+    main { padding: var(--pad); max-width: 900px; margin: 0 auto; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    select, button {
+      font-size: 15px; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid rgba(0,0,0,.15); background: white;
+    }
+    button { cursor: pointer; }
+    button.primary { border-color: rgba(0,0,0,.15); background: #111; color: white; }
+    button.warn { background: #fff4f4; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .meta {
+      margin-top: 10px; font-size: 12px; color: #555;
+      display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    }
+    .cards {
+      margin-top: 14px; display: grid; gap: 12px;
+      grid-template-columns: 1fr;
+    }
+    .card {
+      background: white; border: 1px solid rgba(0,0,0,.10); border-radius: var(--radius);
+      padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .tagRow {
+      display:flex; justify-content: space-between; align-items: center; gap:10px; flex-wrap:wrap;
+      margin-bottom: 10px;
+    }
+    .tag {
+      display: inline-block; font-size: 12px; padding: 3px 8px; border-radius: 999px;
+      background: rgba(0,0,0,.06); color: #222;
+    }
+    .text { font-size: 20px; line-height: 1.25; margin: 0; }
+    .small { font-size: 12px; color: #666; margin: 10px 0 0; }
+    .btnRow { display:flex; gap:10px; flex-wrap:wrap; margin-top: 12px; }
+    .btnSmall {
+      font-size: 14px; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid rgba(0,0,0,.15); background: white;
+    }
+    .btnComplete { background:#111; color:#fff; }
+    .btnRedraw { background:#f1f1f2; }
+    .footer {
+      margin: 18px 0 0; font-size: 12px; color: #666;
+      padding-bottom: 40px;
+    }
+    .pill {
+      font-size: 12px; padding: 6px 10px; border-radius: 999px;
+      background: rgba(0,0,0,.06);
+    }
+
+    /* Modal */
+    .modalBackdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      display: none; align-items: center; justify-content: center;
+      padding: 18px; z-index: 999;
+    }
+    .modal {
+      width: min(820px, 100%);
+      background: white; border-radius: 16px;
+      border: 1px solid rgba(0,0,0,.15);
+      box-shadow: 0 10px 30px rgba(0,0,0,.2);
+      overflow: hidden;
+    }
+    .modalHeader {
+      padding: 14px 16px;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      border-bottom: 1px solid rgba(0,0,0,.08);
+    }
+    .modalHeader h2 { margin: 0; font-size: 16px; }
+    .modalBody { padding: 14px 16px; max-height: 70vh; overflow:auto; }
+    .modalBody ol { margin: 0; padding-left: 18px; }
+    .modalBody li { margin: 8px 0; line-height: 1.25; }
+    .modalFooter {
+      padding: 12px 16px; border-top: 1px solid rgba(0,0,0,.08);
+      display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
+    }
+    .kbd {
+      font-size: 12px; padding: 2px 6px; border-radius: 8px;
+      background: rgba(0,0,0,.06);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Elevator Conversation Cards</h1>
+    <p class="sub">Start the round, then complete prompts as you use them. Keep it natural.</p>
+  </header>
+
+  <main>
+    <div class="row">
+      <label>
+        <span class="pill">Category</span>
+        <select id="category"></select>
+      </label>
+
+      <button class="primary" id="start">Start (Deal 3)</button>
+      <button id="viewCompleted">Completed Prompts</button>
+      <button class="warn" id="reset">Reset / Reshuffle</button>
+    </div>
+
+    <div class="meta">
+      <div>Remaining in current pool: <strong id="remaining">—</strong></div>
+      <div>Completed: <strong id="score">0</strong></div>
+    </div>
+
+    <section class="cards" id="cards"></section>
+
+    <div class="footer">
+      <div><strong>Tip:</strong> If a prompt feels awkward, tap <span class="kbd">Redraw</span> on that card to swap it out. (The old one goes back into the deck.)</div>
+      <div style="margin-top:8px;">Works offline if you save this page to your home screen (browser menu).</div>
+    </div>
+  </main>
+
+  <!-- Completed modal -->
+  <div class="modalBackdrop" id="backdrop" role="dialog" aria-modal="true" aria-labelledby="completedTitle">
+    <div class="modal">
+      <div class="modalHeader">
+        <h2 id="completedTitle">Completed Prompts</h2>
+        <button class="btnSmall" id="closeModal" aria-label="Close">Close</button>
+      </div>
+      <div class="modalBody">
+        <div id="completedEmpty" style="color:#666; font-size: 13px; display:none;">
+          Nothing completed yet. Go use some prompts.
+        </div>
+        <ol id="completedList"></ol>
+      </div>
+      <div class="modalFooter">
+        <button class="btnSmall" id="copyCompleted">Copy list</button>
+        <button class="btnSmall warn" id="clearCompleted">Clear completed</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Deck data (100 cards) ---
+    const DECK = [
+      // I. Entry & Opening Moves
+      {cat:"Entry & Opening", text:"Begin with a curiosity, not a claim."},
+      {cat:"Entry & Opening", text:"Start with something you’ve been noticing lately."},
+      {cat:"Entry & Opening", text:"Open with a “because,” even if the sentence is unfinished."},
+      {cat:"Entry & Opening", text:"Say one sentence that would never appear on LinkedIn."},
+      {cat:"Entry & Opening", text:"Begin with uncertainty rather than confidence."},
+      {cat:"Entry & Opening", text:"Start mid-thought."},
+      {cat:"Entry & Opening", text:"Open by naming a tension you’re sitting with."},
+      {cat:"Entry & Opening", text:"Begin with what surprised you recently."},
+      {cat:"Entry & Opening", text:"Start by referencing something outside yourself."},
+      {cat:"Entry & Opening", text:"Begin with a question instead of a statement."},
+
+      // II. Listening & Response Moves
+      {cat:"Listening & Response", text:"Echo one phrase someone else used before responding."},
+      {cat:"Listening & Response", text:"Ask a follow-up that makes the previous answer sharper."},
+      {cat:"Listening & Response", text:"Paraphrase what you just heard, then add one word."},
+      {cat:"Listening & Response", text:"Respond to why, not what."},
+      {cat:"Listening & Response", text:"Notice what didn’t get said and ask about it."},
+      {cat:"Listening & Response", text:"Build directly on someone else’s idea."},
+      {cat:"Listening & Response", text:"Ask a clarifying question before offering your view."},
+      {cat:"Listening & Response", text:"Respond with curiosity, not evaluation."},
+      {cat:"Listening & Response", text:"Let someone else finish a thought you could complete."},
+      {cat:"Listening & Response", text:"Pause for two seconds before speaking."},
+
+      // III. Persona & Stance
+      {cat:"Persona & Stance", text:"Name a value you actually practice."},
+      {cat:"Persona & Stance", text:"Say what kind of collaborator you try not to be."},
+      {cat:"Persona & Stance", text:"Describe a habit that shapes how you work with others."},
+      {cat:"Persona & Stance", text:"Say what you tend to notice before others do."},
+      {cat:"Persona & Stance", text:"Name something you care about more than efficiency."},
+      {cat:"Persona & Stance", text:"Say what drains your energy in group work."},
+      {cat:"Persona & Stance", text:"Say what reliably gives you energy."},
+      {cat:"Persona & Stance", text:"Describe how you behave when things get stuck."},
+      {cat:"Persona & Stance", text:"Name a role you often end up playing on teams."},
+      {cat:"Persona & Stance", text:"Say how you know when a project is going well."},
+
+      // IV. Value & “So What”
+      {cat:"Value & So What", text:"Explain how your work makes something easier for others."},
+      {cat:"Value & So What", text:"Name a result you care about beyond success or failure."},
+      {cat:"Value & So What", text:"Say what improves when you’re in the room."},
+      {cat:"Value & So What", text:"Translate what you do into a benefit someone else might feel."},
+      {cat:"Value & So What", text:"Say what problem you quietly like solving."},
+      {cat:"Value & So What", text:"Name an outcome you’re trying to make more likely."},
+      {cat:"Value & So What", text:"Say what kind of impact actually matters to you."},
+      {cat:"Value & So What", text:"Describe value without using adjectives."},
+      {cat:"Value & So What", text:"Say who tends to benefit most from your strengths."},
+      {cat:"Value & So What", text:"Name a consequence you’ve learned to watch for."},
+
+      // V. “Why” & Motivation
+      {cat:"Why & Motivation", text:"Use the word “because” once."},
+      {cat:"Why & Motivation", text:"Say what originally pulled you toward this interest."},
+      {cat:"Why & Motivation", text:"Name a frustration that motivates you."},
+      {cat:"Why & Motivation", text:"Say what you’d work on even if no one rewarded it."},
+      {cat:"Why & Motivation", text:"Describe what keeps your attention over time."},
+      {cat:"Why & Motivation", text:"Say what made this feel worth pursuing."},
+      {cat:"Why & Motivation", text:"Name a belief that shapes your decisions."},
+      {cat:"Why & Motivation", text:"Say what you’d miss if you couldn’t do this anymore."},
+      {cat:"Why & Motivation", text:"Describe a moment that clarified something for you."},
+      {cat:"Why & Motivation", text:"Say why this matters now, not eventually."},
+
+      // VI. Direction & Future
+      {cat:"Direction & Future", text:"Say what you’re trying to get better at right now."},
+      {cat:"Direction & Future", text:"Name something you’re actively testing."},
+      {cat:"Direction & Future", text:"Say what you’re curious about becoming."},
+      {cat:"Direction & Future", text:"Describe a direction without naming a destination."},
+      {cat:"Direction & Future", text:"Say what you hope changes over the next year."},
+      {cat:"Direction & Future", text:"Name a skill you’re intentionally developing."},
+      {cat:"Direction & Future", text:"Say what you’re willing to revise about your plans."},
+      {cat:"Direction & Future", text:"Describe a risk you’re open to taking."},
+      {cat:"Direction & Future", text:"Say what you’re exploring rather than committing to."},
+      {cat:"Direction & Future", text:"Name what you’re learning to let go of."},
+
+      // VII. Connection & Invitation
+      {cat:"Connection & Invitation", text:"Ask a question you genuinely want answered."},
+      {cat:"Connection & Invitation", text:"Invite a second conversation without asking for anything."},
+      {cat:"Connection & Invitation", text:"Name a possible overlap between you and someone else."},
+      {cat:"Connection & Invitation", text:"Say how someone else’s interest connects to yours."},
+      {cat:"Connection & Invitation", text:"Ask who else should be in this conversation."},
+      {cat:"Connection & Invitation", text:"Invite collaboration without defining it yet."},
+      {cat:"Connection & Invitation", text:"Ask what kind of help would actually be useful."},
+      {cat:"Connection & Invitation", text:"Say what kind of conversation you’d like to continue."},
+      {cat:"Connection & Invitation", text:"Invite comparison rather than agreement."},
+      {cat:"Connection & Invitation", text:"End your turn with an opening, not a summary."},
+
+      // VIII. Constraint & Craft
+      {cat:"Constraint & Craft", text:"Avoid naming your major or job."},
+      {cat:"Constraint & Craft", text:"Use only one adjective this round."},
+      {cat:"Constraint & Craft", text:"Speak in sentence fragments."},
+      {cat:"Constraint & Craft", text:"Ask a question before making a claim."},
+      {cat:"Constraint & Craft", text:"Say less than you want to."},
+      {cat:"Constraint & Craft", text:"Stop mid-thought and let it hang."},
+      {cat:"Constraint & Craft", text:"Use a concrete example instead of abstraction."},
+      {cat:"Constraint & Craft", text:"Explain without using industry jargon."},
+      {cat:"Constraint & Craft", text:"Say it again, but simpler."},
+      {cat:"Constraint & Craft", text:"Change your pacing halfway through."},
+
+      // IX. Playful / Light Disruption
+      {cat:"Playful Disruption", text:"Begin with “This might sound strange, but…”"},
+      {cat:"Playful Disruption", text:"Use a metaphor you wouldn’t normally choose."},
+      {cat:"Playful Disruption", text:"Say one thing you’d normally edit out."},
+      {cat:"Playful Disruption", text:"Acknowledge the awkwardness, then continue."},
+      {cat:"Playful Disruption", text:"Begin with “Quick version…”"},
+      {cat:"Playful Disruption", text:"Pretend you’re already late for something."},
+      {cat:"Playful Disruption", text:"End a sentence with “Anyway.”"},
+      {cat:"Playful Disruption", text:"Say one thing you don’t have figured out."},
+      {cat:"Playful Disruption", text:"Smile before you speak, then ignore it."},
+      {cat:"Playful Disruption", text:"Deliver one line as if you’re confiding a secret."},
+
+      // X. Meta & Reflection
+      {cat:"Meta Reflection", text:"Name the move you just made."},
+      {cat:"Meta Reflection", text:"Say what shifted in the conversation."},
+      {cat:"Meta Reflection", text:"Notice what energized the group."},
+      {cat:"Meta Reflection", text:"Say what you’re trying not to do right now."},
+      {cat:"Meta Reflection", text:"Identify what made this feel easier or harder."},
+      {cat:"Meta Reflection", text:"Say what kind of listener you’re being."},
+      {cat:"Meta Reflection", text:"Name the moment you felt most engaged."},
+      {cat:"Meta Reflection", text:"Say what you’re curious to hear next."},
+      {cat:"Meta Reflection", text:"Acknowledge someone else’s contribution explicitly."},
+      {cat:"Meta Reflection", text:"End by saying what you’d like to carry forward."},
+    ];
+
+    // ---- Helpers ----
+    function uniq(arr){ return Array.from(new Set(arr)); }
+    function shuffle(array){
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    // ---- State (category-based pool, no-repeat shoe) ----
+    const LS_KEY = "ecc_game_v2";
+    const DEFAULT_STATE = {
+      category: "All Categories",
+      remaining: [],   // array of card indexes
+      used: [],        // array of card indexes
+      score: 0,
+      active: [],      // 3 active card indexes
+      completed: []    // list of completed card objects {cat,text,ts}
+    };
+
+    function loadState(){
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return null;
+        const st = JSON.parse(raw);
+        // Basic validation
+        if (!st || !Array.isArray(st.completed)) return null;
+        return st;
+      } catch { return null; }
+    }
+
+    function saveState(st){
+      localStorage.setItem(LS_KEY, JSON.stringify(st));
+    }
+
+    function buildPool(category){
+      const pool = (category === "All Categories")
+        ? DECK.map((_, idx) => idx)
+        : DECK.map((c, idx) => ({c, idx}))
+              .filter(x => x.c.cat === category)
+              .map(x => x.idx);
+      return shuffle(pool.slice());
+    }
+
+    function ensurePool(st){
+      if (!Array.isArray(st.remaining) || st.remaining.length === 0) {
+        // recycle used back into remaining
+        const recycled = Array.isArray(st.used) ? st.used.slice() : [];
+        st.used = [];
+        st.remaining = shuffle(recycled.length ? recycled : buildPool(st.category));
+      }
+      return st;
+    }
+
+    function drawIndex(st){
+      st = ensurePool(st);
+      const idx = st.remaining.pop();
+      st.used.push(idx);
+      return idx;
+    }
+
+    function returnToDeck(st, idx){
+      // put it back into remaining (then shuffle lightly to avoid immediate re-draw patterns)
+      if (typeof idx !== "number") return;
+      // remove from used if present
+      st.used = (st.used || []).filter(x => x !== idx);
+      st.remaining = st.remaining || [];
+      st.remaining.push(idx);
+      // light shuffle: Fisher-Yates over last ~10 for speed (still good randomness)
+      const n = st.remaining.length;
+      const start = Math.max(0, n - 12);
+      for (let i = n - 1; i > start; i--) {
+        const j = start + Math.floor(Math.random() * (i - start + 1));
+        [st.remaining[i], st.remaining[j]] = [st.remaining[j], st.remaining[i]];
+      }
+    }
+
+    // ---- UI render ----
+    const elCards = document.getElementById("cards");
+    const elRemaining = document.getElementById("remaining");
+    const elScore = document.getElementById("score");
+    const elCategory = document.getElementById("category");
+    const elStart = document.getElementById("start");
+    const elReset = document.getElementById("reset");
+    const elViewCompleted = document.getElementById("viewCompleted");
+
+    const elBackdrop = document.getElementById("backdrop");
+    const elCloseModal = document.getElementById("closeModal");
+    const elCompletedList = document.getElementById("completedList");
+    const elCompletedEmpty = document.getElementById("completedEmpty");
+    const elCopyCompleted = document.getElementById("copyCompleted");
+    const elClearCompleted = document.getElementById("clearCompleted");
+
+    function render(st){
+      elRemaining.textContent = String((st.remaining || []).length);
+      elScore.textContent = String(st.score || 0);
+
+      elCards.innerHTML = "";
+
+      if (!Array.isArray(st.active) || st.active.length === 0) {
+        // Pre-start blank state
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML = `
+          <div class="tagRow">
+            <span class="tag">Ready</span>
+          </div>
+          <p class="text">Tap <strong>Start (Deal 3)</strong> to begin.</p>
+          <p class="small">You’ll get three prompts. When you use one, tap <strong>Complete</strong> to replace it.</p>
+        `;
+        elCards.appendChild(div);
+        return;
+      }
+
+      st.active.forEach((idx, slot) => {
+        const c = DECK[idx];
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML = `
+          <div class="tagRow">
+            <span class="tag">Card ${slot+1} • ${c.cat}</span>
+            <span class="tag">Tap Complete when used</span>
+          </div>
+          <p class="text">${c.text}</p>
+          <div class="btnRow">
+            <button class="btnSmall btnComplete" data-action="complete" data-slot="${slot}">Complete</button>
+            <button class="btnSmall btnRedraw" data-action="redraw" data-slot="${slot}">Redraw</button>
+          </div>
+          <p class="small">Use it once, then let it go.</p>
+        `;
+        elCards.appendChild(div);
+      });
+    }
+
+    // ---- Modal ----
+    function openCompleted(st){
+      const items = st.completed || [];
+      elCompletedList.innerHTML = "";
+      if (items.length === 0) {
+        elCompletedEmpty.style.display = "block";
+      } else {
+        elCompletedEmpty.style.display = "none";
+        items.slice().reverse().forEach(item => {
+          const li = document.createElement("li");
+          li.textContent = `${item.text} (${item.cat})`;
+          elCompletedList.appendChild(li);
+        });
+      }
+      elBackdrop.style.display = "flex";
+    }
+    function closeCompleted(){
+      elBackdrop.style.display = "none";
+    }
+
+    // ---- Game actions ----
+    function startGame(st){
+      // Reset the pool for current category, deal 3
+      st.category = elCategory.value;
+      st.remaining = buildPool(st.category);
+      st.used = [];
+      st.active = [];
+      for (let i=0; i<3; i++){
+        st.active.push(drawIndex(st));
+      }
+      saveState(st);
+      render(st);
+    }
+
+    function resetAll(){
+      const st = structuredClone(DEFAULT_STATE);
+      st.category = elCategory.value;
+      st.remaining = buildPool(st.category);
+      saveState(st);
+      render(st);
+    }
+
+    function redrawOne(st, slot){
+      const oldIdx = st.active[slot];
+      returnToDeck(st, oldIdx);
+      const newIdx = drawIndex(st);
+      st.active[slot] = newIdx;
+      saveState(st);
+      render(st);
+    }
+
+    function completeOne(st, slot){
+      const idx = st.active[slot];
+      const card = DECK[idx];
+
+      st.score = (st.score || 0) + 1;
+      st.completed = st.completed || [];
+      st.completed.push({ cat: card.cat, text: card.text, ts: Date.now() });
+
+      // Replace the completed card with a new one
+      const newIdx = drawIndex(st);
+      st.active[slot] = newIdx;
+
+      saveState(st);
+      render(st);
+    }
+
+    // ---- Init ----
+    function init(){
+      // Build category dropdown
+      const cats = uniq(DECK.map(c => c.cat)).sort();
+      ["All Categories", ...cats].forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.textContent = c;
+        elCategory.appendChild(opt);
+      });
+
+      // Load state
+      let st = loadState();
+      if (!st) st = structuredClone(DEFAULT_STATE);
+
+      // Ensure category UI matches state
+      if (st.category && ["All Categories", ...cats].includes(st.category)) {
+        elCategory.value = st.category;
+      } else {
+        st.category = elCategory.value;
+      }
+
+      // Ensure pools are sane for current category
+      if (!Array.isArray(st.remaining) || st.category !== elCategory.value) {
+        st.category = elCategory.value;
+        st.remaining = buildPool(st.category);
+        st.used = [];
+        st.active = []; // force re-start to avoid category mismatch confusion
+      } else {
+        // If they previously started, keep going; just ensure pool is replenishable
+        st = ensurePool(st);
+      }
+
+      saveState(st);
+      render(st);
+
+      // Events
+      elStart.addEventListener("click", () => {
+        let st2 = loadState() || structuredClone(DEFAULT_STATE);
+        startGame(st2);
+      });
+
+      elReset.addEventListener("click", () => {
+        resetAll();
+      });
+
+      elCategory.addEventListener("change", () => {
+        // Changing category does NOT auto-start; it resets active hand to "ready" state
+        let st2 = loadState() || structuredClone(DEFAULT_STATE);
+        st2.category = elCategory.value;
+        st2.remaining = buildPool(st2.category);
+        st2.used = [];
+        st2.active = [];
+        saveState(st2);
+        render(st2);
+      });
+
+      elCards.addEventListener("click", (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+
+        const action = btn.getAttribute("data-action");
+        const slotStr = btn.getAttribute("data-slot");
+        const slot = Number(slotStr);
+        if (!Number.isFinite(slot)) return;
+
+        let st2 = loadState() || structuredClone(DEFAULT_STATE);
+        if (!Array.isArray(st2.active) || st2.active.length !== 3) return;
+
+        if (action === "redraw") redrawOne(st2, slot);
+        if (action === "complete") completeOne(st2, slot);
+      });
+
+      elViewCompleted.addEventListener("click", () => {
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
+        openCompleted(st2);
+      });
+
+      elCloseModal.addEventListener("click", closeCompleted);
+      elBackdrop.addEventListener("click", (e) => {
+        if (e.target === elBackdrop) closeCompleted();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeCompleted();
+      });
+
+      elCopyCompleted.addEventListener("click", async () => {
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
+        const items = st2.completed || [];
+        const text = items.map((it, i) => `${i+1}. ${it.text} (${it.cat})`).join("\n");
+        try {
+          await navigator.clipboard.writeText(text || "");
+          elCopyCompleted.textContent = "Copied!";
+          setTimeout(() => elCopyCompleted.textContent = "Copy list", 900);
+        } catch {
+          elCopyCompleted.textContent = "Copy failed";
+          setTimeout(() => elCopyCompleted.textContent = "Copy list", 900);
+        }
+      });
+
+      elClearCompleted.addEventListener("click", () => {
+        let st2 = loadState() || structuredClone(DEFAULT_STATE);
+        st2.completed = [];
+        st2.score = 0;
+        saveState(st2);
+        openCompleted(st2);
+        elScore.textContent = "0";
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
