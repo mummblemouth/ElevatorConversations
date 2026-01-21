@@ -716,10 +716,13 @@
         startRound(st2);
       });
 
-      elEndRound.addEventListener("click", () => {
-        const st2 = loadState() || structuredClone(DEFAULT_STATE);
-        endConversation(st2);
-      });
+elEndRound.addEventListener("click", () => {
+  const ok = confirm("End this conversation and draw your reflection prompt?");
+  if (!ok) return;
+
+  const st2 = loadState() || structuredClone(DEFAULT_STATE);
+  endConversation(st2);
+});
 
       elReset.addEventListener("click", () => {
         const ok = confirm("Reset the game? This clears score, log, rounds, and reshuffles the deck.");
