@@ -26,7 +26,7 @@
     }
     button.primary { background: #111; color: white; }
     button.warn { background: #fff4f4; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
 
     .meta {
       margin-top: 10px; font-size: 12px; color: #555;
@@ -40,9 +40,7 @@
       background: white; border: 1px solid rgba(0,0,0,.10); border-radius: var(--radius);
       padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
     }
-    .card.locked {
-      opacity: 0.45;
-    }
+    .card.locked { opacity: 0.45; }
     .tagRow {
       display:flex; justify-content: space-between; align-items: center; gap:10px; flex-wrap:wrap;
       margin-bottom: 10px;
@@ -112,12 +110,12 @@
 <body>
   <header>
     <h1>Elevator Conversation Cards</h1>
-    <p class="sub">Start a round, use prompts naturally, then end with one reflection.</p>
+    <p class="sub">Start the game, use prompts naturally, then end each conversation with one reflection.</p>
   </header>
 
   <main>
     <div class="row">
-      <button class="primary" id="start">Start Round (Deal 3)</button>
+      <button class="primary" id="start">Start Game (Deal 3)</button>
       <button id="endRound" disabled>End Conversation</button>
       <button id="viewCompleted">Review Log</button>
       <button id="viewDeck">View Full Deck</button>
@@ -127,7 +125,7 @@
     <div class="meta">
       <div>Remaining in deck: <strong id="remaining">—</strong></div>
       <div>Completed: <strong id="score">0</strong></div>
-      <div>Round: <strong id="round">0</strong></div>
+      <div>Conversation: <strong id="round">0</strong></div>
     </div>
 
     <section class="cards" id="cards"></section>
@@ -146,7 +144,7 @@
         <button class="btnSmall" id="closeLog" aria-label="Close">Close</button>
       </div>
       <div class="modalBody">
-        <div id="logEmpty" class="muted" style="display:none;">Nothing logged yet. Start a round and complete a prompt.</div>
+        <div id="logEmpty" class="muted" style="display:none;">Nothing logged yet. Start the game and complete a prompt.</div>
         <ol id="logList"></ol>
       </div>
       <div class="modalFooter">
@@ -184,10 +182,10 @@
         <div class="muted">Answer this out loud as a group before you rotate.</div>
         <div class="card" style="margin-top:12px;">
           <div class="tagRow">
-            <span class="tag" id="reflectionTag">Round —</span>
+            <span class="tag" id="reflectionTag">Conversation —</span>
           </div>
           <p class="text" id="reflectionText">—</p>
-          <p class="small">When you are done, close this window. You will be prompted to start the next round.</p>
+          <p class="small">When you close this window, the next conversation will begin automatically (same cards).</p>
         </div>
       </div>
       <div class="modalFooter">
@@ -313,16 +311,16 @@
     const REFLECTION_DECK = [
       {cat: REFLECTION_CATEGORY, text:"What should we carry into the next conversation?"},
       {cat: REFLECTION_CATEGORY, text:"What did you learn about how you come across in a first meeting?"},
-      {cat: REFLECTION_CATEGORY, text:"What question do you want to try asking in the next round?"},
+      {cat: REFLECTION_CATEGORY, text:"What question do you want to try asking in the next conversation?"},
       {cat: REFLECTION_CATEGORY, text:"What made this conversation easier than expected?"},
       {cat: REFLECTION_CATEGORY, text:"What made this conversation harder than expected?"},
       {cat: REFLECTION_CATEGORY, text:"Name one moment you felt genuinely engaged. What caused it?"},
       {cat: REFLECTION_CATEGORY, text:"What overlap did you notice that you did not expect?"},
       {cat: REFLECTION_CATEGORY, text:"What is one phrase you heard that you want to borrow (ethically)?"},
-      {cat: REFLECTION_CATEGORY, text:"What is one small adjustment you will make in the next round?"},
+      {cat: REFLECTION_CATEGORY, text:"What is one small adjustment you will make next time?"},
       {cat: REFLECTION_CATEGORY, text:"What is one useful next step you could take after class, even if it is tiny?"},
       {cat: REFLECTION_CATEGORY, text:"What is one thing someone did that made it easier to talk?"},
-      {cat: REFLECTION_CATEGORY, text:"What did you do well in this round that you should repeat?"}
+      {cat: REFLECTION_CATEGORY, text:"What did you do well in this conversation that you should repeat?"},
     ];
 
     // ---- Helpers ----
@@ -335,9 +333,9 @@
     }
 
     // ---- State ----
-    // Used main cards remain out of rotation until reset. We do NOT recycle used.
-    const LS_KEY = "ecc_game_v5";
+    const LS_KEY = "ecc_game_v6";
     const DEFAULT_STATE = {
+      gameStarted: false,
       remaining: [],
       used: [],
       score: 0,
@@ -345,7 +343,7 @@
       completed: [],
       round: 0,
       reflectionDone: true,
-      lockedBetweenRounds: false,     // NEW: freeze hand until next round begins
+      lockedBetweenRounds: false,
       reflectionRemaining: [],
       reflectionUsed: []
     };
@@ -447,8 +445,11 @@
     const elReflectionText = document.getElementById("reflectionText");
     const elCopyReflection = document.getElementById("copyReflection");
 
-    function setEndRoundEnabled(st){
-      const activeRound = Array.isArray(st.active) && st.active.length >= 1;
+    function setButtonStates(st){
+      // Start Game: one-time, until reset
+      elStart.disabled = !!st.gameStarted;
+
+      const activeRound = st.gameStarted && Array.isArray(st.active) && st.active.length >= 1;
       elEndRound.disabled = !(activeRound && !st.reflectionDone && !st.lockedBetweenRounds);
     }
 
@@ -459,19 +460,33 @@
       elScore.textContent = String(st.score || 0);
       elRound.textContent = String(st.round || 0);
 
-      setEndRoundEnabled(st);
+      setButtonStates(st);
 
       elCards.innerHTML = "";
 
-      if (!Array.isArray(st.active) || st.active.length === 0) {
+      if (!st.gameStarted) {
         const div = document.createElement("div");
         div.className = "card";
         div.innerHTML = `
           <div class="tagRow">
             <span class="tag">Ready</span>
           </div>
-          <p class="text">Tap <strong>Start Round (Deal 3)</strong> to begin.</p>
+          <p class="text">Tap <strong>Start Game (Deal 3)</strong> to begin.</p>
           <p class="small">You’ll get three prompts. When you use one, tap <strong>Complete</strong> to replace it.</p>
+        `;
+        elCards.appendChild(div);
+        return;
+      }
+
+      if (!Array.isArray(st.active) || st.active.length === 0) {
+        const div = document.createElement("div");
+        div.className = "card";
+        div.innerHTML = `
+          <div class="tagRow">
+            <span class="tag">No active cards</span>
+          </div>
+          <p class="text">You’re out of cards.</p>
+          <p class="small">Keep talking without prompts, or reset the game to reshuffle.</p>
         `;
         elCards.appendChild(div);
         return;
@@ -499,7 +514,7 @@
         div.innerHTML = `
           <div class="tagRow">
             <span class="tag">Card ${slot+1} • ${c.cat}</span>
-            <span class="tag">${st.lockedBetweenRounds ? "Between rounds" : "Tap Complete when used"}</span>
+            <span class="tag">${st.lockedBetweenRounds ? "Between conversations" : "Tap Complete when used"}</span>
           </div>
           <p class="text">${c.text}</p>
           <div class="btnRow">
@@ -531,7 +546,7 @@
 
           if (item.type === "reflection") {
             li.classList.add("completedReflection");
-            li.textContent = `Round ${item.round} Reflection: ${item.text}`;
+            li.textContent = `Conversation ${item.round} Reflection: ${item.text}`;
           } else {
             li.textContent = `${item.text} (${item.cat})`;
           }
@@ -602,39 +617,50 @@
 
     // ---- Reflection modal ----
     function openReflectionModal(roundNum, reflectionText){
-      elReflectionTag.textContent = `Round ${roundNum}`;
+      elReflectionTag.textContent = `Conversation ${roundNum}`;
       elReflectionText.textContent = reflectionText;
       elBackdropReflection.style.display = "flex";
     }
     function closeReflection(){ elBackdropReflection.style.display = "none"; }
 
     // ---- Game actions ----
-    function startRound(st){
+    function startGame(st){
       st = ensureDecks(st);
 
-      // Unlock between rounds
+      st.gameStarted = true;
+      st.round = 1;
+      st.score = st.score || 0;
+      st.reflectionDone = false;
       st.lockedBetweenRounds = false;
 
-      // Initialize main deck only if this is a fresh game
-      if ((!st.remaining || st.remaining.length === 0) && (!st.used || st.used.length === 0)) {
-        st.remaining = buildMainDeck();
-        st.used = [];
-      }
-
+      // fresh decks
+      st.remaining = buildMainDeck();
+      st.used = [];
       st.active = [];
+      st.reflectionRemaining = buildReflectionDeck();
+      st.reflectionUsed = [];
 
-      // Deal up to 3
-      for (let i=0; i<3; i++){
+      // deal 3
+      for (let i = 0; i < 3; i++) {
         const idx = drawMainIndex(st);
         if (idx === null) break;
         st.active.push(idx);
       }
 
+      saveState(st);
+      render(st);
+    }
+
+    function advanceConversationKeepCards(st){
+      // New conversation begins automatically, same cards.
       st.round = (st.round || 0) + 1;
       st.reflectionDone = false;
+      st.lockedBetweenRounds = false;
 
       saveState(st);
       render(st);
+
+      alert(`Conversation ${st.round} starting now.\nSame cards. Keep going.`);
     }
 
     function resetGameConfirmed(){
@@ -643,7 +669,7 @@
     }
 
     function redrawOne(st, slot){
-      if (st.lockedBetweenRounds) return;
+      if (!st.gameStarted || st.lockedBetweenRounds) return;
 
       const oldIdx = st.active[slot];
       returnMainToDeck(st, oldIdx);
@@ -657,7 +683,7 @@
     }
 
     function completeOne(st, slot){
-      if (st.lockedBetweenRounds) return;
+      if (!st.gameStarted || st.lockedBetweenRounds) return;
 
       const idx = st.active[slot];
       const card = DECK[idx];
@@ -679,6 +705,7 @@
     }
 
     function endConversation(st){
+      if (!st.gameStarted) return;
       if (st.reflectionDone || st.lockedBetweenRounds) return;
 
       const rIdx = drawReflectionIndex(st);
@@ -708,16 +735,6 @@
       let st = loadState();
       if (!st) st = structuredClone(DEFAULT_STATE);
 
-      // Initialize decks if never set
-      if ((!Array.isArray(st.remaining) || (!st.remaining.length && !(st.used || []).length))) {
-        st.remaining = buildMainDeck();
-        st.used = [];
-      }
-      if ((!Array.isArray(st.reflectionRemaining) || (!st.reflectionRemaining.length && !(st.reflectionUsed || []).length))) {
-        st.reflectionRemaining = buildReflectionDeck();
-        st.reflectionUsed = [];
-      }
-
       st = ensureDecks(st);
       saveState(st);
       render(st);
@@ -725,7 +742,8 @@
       // Events
       elStart.addEventListener("click", () => {
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
-        startRound(st2);
+        if (st2.gameStarted) return;
+        startGame(st2);
       });
 
       elEndRound.addEventListener("click", () => {
@@ -737,7 +755,7 @@
       });
 
       elReset.addEventListener("click", () => {
-        const ok = confirm("Reset the game? This clears score, log, rounds, and reshuffles the deck.");
+        const ok = confirm("Reset the game? This clears score, log, conversations, and reshuffles the deck.");
         if (ok) resetGameConfirmed();
       });
 
@@ -772,33 +790,20 @@
         if (e.target === elBackdropDeck) closeDeck();
       });
 
-      // Close reflection: prompt to start next round now
-      elCloseReflection.addEventListener("click", () => {
+      // After reflection closes: automatically advance conversation, keep same cards, show popup
+      function handleReflectionClose(){
         closeReflection();
 
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
+        if (!st2.gameStarted) return;
         if (!st2.lockedBetweenRounds) return;
 
-        const next = (st2.round || 0) + 1;
-        const ok = confirm(`Start Round ${next} now?`);
-        if (!ok) return;
+        advanceConversationKeepCards(st2);
+      }
 
-        startRound(st2);
-      });
-
+      elCloseReflection.addEventListener("click", handleReflectionClose);
       elBackdropReflection.addEventListener("click", (e) => {
-        if (e.target !== elBackdropReflection) return;
-
-        closeReflection();
-
-        const st2 = loadState() || structuredClone(DEFAULT_STATE);
-        if (!st2.lockedBetweenRounds) return;
-
-        const next = (st2.round || 0) + 1;
-        const ok = confirm(`Start Round ${next} now?`);
-        if (!ok) return;
-
-        startRound(st2);
+        if (e.target === elBackdropReflection) handleReflectionClose();
       });
 
       document.addEventListener("keydown", (e) => {
@@ -809,7 +814,7 @@
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
         const items = st2.completed || [];
         const lines = items.map((it, i) => {
-          if (it.type === "reflection") return `${i+1}. [Round ${it.round} Reflection] ${it.text}`;
+          if (it.type === "reflection") return `${i+1}. [Conversation ${it.round} Reflection] ${it.text}`;
           return `${i+1}. ${it.text} (${it.cat})`;
         });
         const text = lines.join("\n");
