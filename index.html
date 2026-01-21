@@ -40,6 +40,9 @@
       background: white; border: 1px solid rgba(0,0,0,.10); border-radius: var(--radius);
       padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
     }
+    .card.locked {
+      opacity: 0.45;
+    }
     .tagRow {
       display:flex; justify-content: space-between; align-items: center; gap:10px; flex-wrap:wrap;
       margin-bottom: 10px;
@@ -101,7 +104,7 @@
     .deckList { margin: 0; padding-left: 18px; }
     .deckList li { margin: 6px 0; line-height: 1.25; }
 
-    /* Completed list formatting */
+    /* Log formatting */
     .completedItem { margin: 8px 0; line-height: 1.25; }
     .completedReflection { font-weight: 700; }
   </style>
@@ -184,7 +187,7 @@
             <span class="tag" id="reflectionTag">Round —</span>
           </div>
           <p class="text" id="reflectionText">—</p>
-          <p class="small">When you are done, close this window and rotate.</p>
+          <p class="small">When you are done, close this window. You will be prompted to start the next round.</p>
         </div>
       </div>
       <div class="modalFooter">
@@ -308,17 +311,17 @@
     // --- Reflection deck (end-cap) ---
     const REFLECTION_CATEGORY = "Reflections and Takeaways";
     const REFLECTION_DECK = [
-      {cat: REFLECTION_CATEGORY, text:"What should we carry into the next conversation?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What did you learn about how you come across in a first meeting?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What question do you want to try asking in the next round?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What made this conversation easier than expected?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What made this conversation harder than expected?"}, 
-      {cat: REFLECTION_CATEGORY, text:"Name one moment you felt genuinely engaged. What caused it?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What overlap did you notice that you did not expect?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What is one phrase you heard that you want to borrow (ethically)?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What is one small adjustment you will make in the next round?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What is one useful next step you could take after class, even if it is tiny?"}, 
-      {cat: REFLECTION_CATEGORY, text:"What is one thing someone did that made it easier to talk?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What should we carry into the next conversation?"},
+      {cat: REFLECTION_CATEGORY, text:"What did you learn about how you come across in a first meeting?"},
+      {cat: REFLECTION_CATEGORY, text:"What question do you want to try asking in the next round?"},
+      {cat: REFLECTION_CATEGORY, text:"What made this conversation easier than expected?"},
+      {cat: REFLECTION_CATEGORY, text:"What made this conversation harder than expected?"},
+      {cat: REFLECTION_CATEGORY, text:"Name one moment you felt genuinely engaged. What caused it?"},
+      {cat: REFLECTION_CATEGORY, text:"What overlap did you notice that you did not expect?"},
+      {cat: REFLECTION_CATEGORY, text:"What is one phrase you heard that you want to borrow (ethically)?"},
+      {cat: REFLECTION_CATEGORY, text:"What is one small adjustment you will make in the next round?"},
+      {cat: REFLECTION_CATEGORY, text:"What is one useful next step you could take after class, even if it is tiny?"},
+      {cat: REFLECTION_CATEGORY, text:"What is one thing someone did that made it easier to talk?"},
       {cat: REFLECTION_CATEGORY, text:"What did you do well in this round that you should repeat?"}
     ];
 
@@ -333,17 +336,18 @@
 
     // ---- State ----
     // Used main cards remain out of rotation until reset. We do NOT recycle used.
-    const LS_KEY = "ecc_game_v4";
+    const LS_KEY = "ecc_game_v5";
     const DEFAULT_STATE = {
-      remaining: [],        // main deck indexes
-      used: [],             // main deck indexes used (completed or dealt)
+      remaining: [],
+      used: [],
       score: 0,
-      active: [],           // 3 main deck indexes currently in hand
-      completed: [],        // log entries
+      active: [],
+      completed: [],
       round: 0,
-      reflectionDone: true, // true when no active round OR reflection already taken
-      reflectionRemaining: [], // reflection indexes
-      reflectionUsed: []       // reflection indexes
+      reflectionDone: true,
+      lockedBetweenRounds: false,     // NEW: freeze hand until next round begins
+      reflectionRemaining: [],
+      reflectionUsed: []
     };
 
     function loadState(){
@@ -367,14 +371,12 @@
     }
 
     function ensureDecks(st){
-      if (!Array.isArray(st.remaining) || st.remaining.length === 0) {
-        // If empty, we do not recycle. Keep empty.
-        st.remaining = Array.isArray(st.remaining) ? st.remaining : [];
-      }
+      if (!Array.isArray(st.remaining)) st.remaining = [];
       if (!Array.isArray(st.used)) st.used = [];
+      if (!Array.isArray(st.active)) st.active = [];
+      if (!Array.isArray(st.completed)) st.completed = [];
 
       if (!Array.isArray(st.reflectionRemaining) || st.reflectionRemaining.length === 0) {
-        // Reflections can recycle for convenience
         const recycled = Array.isArray(st.reflectionUsed) ? st.reflectionUsed.slice() : [];
         st.reflectionUsed = [];
         st.reflectionRemaining = shuffle(recycled.length ? recycled : buildReflectionDeck());
@@ -393,7 +395,6 @@
 
     function returnMainToDeck(st, idx){
       if (typeof idx !== "number") return;
-      // remove from used, put back in remaining, light shuffle tail
       st.used = (st.used || []).filter(x => x !== idx);
       st.remaining = st.remaining || [];
       st.remaining.push(idx);
@@ -447,8 +448,8 @@
     const elCopyReflection = document.getElementById("copyReflection");
 
     function setEndRoundEnabled(st){
-      const activeRound = Array.isArray(st.active) && st.active.length === 3;
-      elEndRound.disabled = !(activeRound && !st.reflectionDone);
+      const activeRound = Array.isArray(st.active) && st.active.length >= 1;
+      elEndRound.disabled = !(activeRound && !st.reflectionDone && !st.lockedBetweenRounds);
     }
 
     function render(st){
@@ -493,10 +494,12 @@
         const c = DECK[idx];
         const div = document.createElement("div");
         div.className = "card";
+        if (st.lockedBetweenRounds) div.classList.add("locked");
+
         div.innerHTML = `
           <div class="tagRow">
             <span class="tag">Card ${slot+1} • ${c.cat}</span>
-            <span class="tag">Tap Complete when used</span>
+            <span class="tag">${st.lockedBetweenRounds ? "Between rounds" : "Tap Complete when used"}</span>
           </div>
           <p class="text">${c.text}</p>
           <div class="btnRow">
@@ -505,6 +508,11 @@
           </div>
           <p class="small">Use it once, then let it go.</p>
         `;
+
+        if (st.lockedBetweenRounds) {
+          div.querySelectorAll("button").forEach(b => b.disabled = true);
+        }
+
         elCards.appendChild(div);
       });
     }
@@ -574,7 +582,6 @@
         elDeckContainer.appendChild(ol);
       });
 
-      // Add reflections deck
       const rTitle = document.createElement("div");
       rTitle.className = "sectionTitle";
       rTitle.textContent = REFLECTION_CATEGORY;
@@ -605,16 +612,18 @@
     function startRound(st){
       st = ensureDecks(st);
 
-      // If main deck not initialized yet, initialize
-      if (!Array.isArray(st.remaining) || st.remaining.length === 0 && (st.used || []).length === 0) {
+      // Unlock between rounds
+      st.lockedBetweenRounds = false;
+
+      // Initialize main deck only if this is a fresh game
+      if ((!st.remaining || st.remaining.length === 0) && (!st.used || st.used.length === 0)) {
         st.remaining = buildMainDeck();
         st.used = [];
       }
 
-      // Deal 3 into active (clear any existing active hand)
       st.active = [];
 
-      // If fewer than 3 left, deal what we can
+      // Deal up to 3
       for (let i=0; i<3; i++){
         const idx = drawMainIndex(st);
         if (idx === null) break;
@@ -630,16 +639,17 @@
 
     function resetGameConfirmed(){
       localStorage.removeItem(LS_KEY);
-      // hard reload is simplest to wipe any in-memory state
       location.reload();
     }
 
     function redrawOne(st, slot){
+      if (st.lockedBetweenRounds) return;
+
       const oldIdx = st.active[slot];
       returnMainToDeck(st, oldIdx);
 
       const newIdx = drawMainIndex(st);
-      if (newIdx === null) return; // deck empty
+      if (newIdx === null) return;
 
       st.active[slot] = newIdx;
       saveState(st);
@@ -647,6 +657,8 @@
     }
 
     function completeOne(st, slot){
+      if (st.lockedBetweenRounds) return;
+
       const idx = st.active[slot];
       const card = DECK[idx];
 
@@ -654,10 +666,8 @@
       st.completed = st.completed || [];
       st.completed.push({ type:"prompt", cat: card.cat, text: card.text, ts: Date.now() });
 
-      // Replace with a new card if possible; otherwise remove slot
       const newIdx = drawMainIndex(st);
       if (newIdx === null) {
-        // remove the slot from active (keep UI stable if fewer than 3)
         st.active[slot] = null;
         st.active = st.active.filter(x => x !== null);
       } else {
@@ -669,7 +679,8 @@
     }
 
     function endConversation(st){
-      if (st.reflectionDone) return;
+      if (st.reflectionDone || st.lockedBetweenRounds) return;
+
       const rIdx = drawReflectionIndex(st);
       if (rIdx === null) return;
 
@@ -685,6 +696,7 @@
       });
 
       st.reflectionDone = true;
+      st.lockedBetweenRounds = true;
 
       saveState(st);
       render(st);
@@ -696,12 +708,12 @@
       let st = loadState();
       if (!st) st = structuredClone(DEFAULT_STATE);
 
-      // Initialize main deck only if never set
-      if (!Array.isArray(st.remaining) || (!st.remaining.length && !(st.used || []).length)) {
+      // Initialize decks if never set
+      if ((!Array.isArray(st.remaining) || (!st.remaining.length && !(st.used || []).length))) {
         st.remaining = buildMainDeck();
         st.used = [];
       }
-      if (!Array.isArray(st.reflectionRemaining) || (!st.reflectionRemaining.length && !(st.reflectionUsed || []).length)) {
+      if ((!Array.isArray(st.reflectionRemaining) || (!st.reflectionRemaining.length && !(st.reflectionUsed || []).length))) {
         st.reflectionRemaining = buildReflectionDeck();
         st.reflectionUsed = [];
       }
@@ -716,13 +728,13 @@
         startRound(st2);
       });
 
-elEndRound.addEventListener("click", () => {
-  const ok = confirm("End this conversation and draw your reflection prompt?");
-  if (!ok) return;
+      elEndRound.addEventListener("click", () => {
+        const ok = confirm("End this conversation and draw a reflection prompt for your group?");
+        if (!ok) return;
 
-  const st2 = loadState() || structuredClone(DEFAULT_STATE);
-  endConversation(st2);
-});
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
+        endConversation(st2);
+      });
 
       elReset.addEventListener("click", () => {
         const ok = confirm("Reset the game? This clears score, log, rounds, and reshuffles the deck.");
@@ -760,9 +772,33 @@ elEndRound.addEventListener("click", () => {
         if (e.target === elBackdropDeck) closeDeck();
       });
 
-      elCloseReflection.addEventListener("click", closeReflection);
+      // Close reflection: prompt to start next round now
+      elCloseReflection.addEventListener("click", () => {
+        closeReflection();
+
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
+        if (!st2.lockedBetweenRounds) return;
+
+        const next = (st2.round || 0) + 1;
+        const ok = confirm(`Start Round ${next} now?`);
+        if (!ok) return;
+
+        startRound(st2);
+      });
+
       elBackdropReflection.addEventListener("click", (e) => {
-        if (e.target === elBackdropReflection) closeReflection();
+        if (e.target !== elBackdropReflection) return;
+
+        closeReflection();
+
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
+        if (!st2.lockedBetweenRounds) return;
+
+        const next = (st2.round || 0) + 1;
+        const ok = confirm(`Start Round ${next} now?`);
+        if (!ok) return;
+
+        startRound(st2);
       });
 
       document.addEventListener("keydown", (e) => {
