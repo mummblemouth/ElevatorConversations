@@ -18,14 +18,16 @@
     .sub { margin: 0; font-size: 13px; color: #444; }
     main { padding: var(--pad); max-width: 900px; margin: 0 auto; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    select, button {
+
+    button {
       font-size: 15px; padding: 10px 12px; border-radius: 12px;
       border: 1px solid rgba(0,0,0,.15); background: white;
+      cursor: pointer;
     }
-    button { cursor: pointer; }
-    button.primary { border-color: rgba(0,0,0,.15); background: #111; color: white; }
+    button.primary { background: #111; color: white; }
     button.warn { background: #fff4f4; }
     button:disabled { opacity: .5; cursor: not-allowed; }
+
     .meta {
       margin-top: 10px; font-size: 12px; color: #555;
       display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
@@ -55,12 +57,13 @@
     }
     .btnComplete { background:#111; color:#fff; }
     .btnRedraw { background:#f1f1f2; }
+
     .footer {
       margin: 18px 0 0; font-size: 12px; color: #666;
       padding-bottom: 40px;
     }
-    .pill {
-      font-size: 12px; padding: 6px 10px; border-radius: 999px;
+    .kbd {
+      font-size: 12px; padding: 2px 6px; border-radius: 8px;
       background: rgba(0,0,0,.06);
     }
 
@@ -84,16 +87,19 @@
     }
     .modalHeader h2 { margin: 0; font-size: 16px; }
     .modalBody { padding: 14px 16px; max-height: 70vh; overflow:auto; }
-    .modalBody ol { margin: 0; padding-left: 18px; }
-    .modalBody li { margin: 8px 0; line-height: 1.25; }
     .modalFooter {
       padding: 12px 16px; border-top: 1px solid rgba(0,0,0,.08);
       display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
     }
-    .kbd {
-      font-size: 12px; padding: 2px 6px; border-radius: 8px;
-      background: rgba(0,0,0,.06);
+    .sectionTitle {
+      margin: 14px 0 8px;
+      font-size: 13px;
+      color: #333;
+      font-weight: 650;
     }
+    .deckList { margin: 0; padding-left: 18px; }
+    .deckList li { margin: 6px 0; line-height: 1.25; }
+    .muted { color:#666; font-size: 13px; }
   </style>
 </head>
 <body>
@@ -104,18 +110,14 @@
 
   <main>
     <div class="row">
-      <label>
-        <span class="pill">Category</span>
-        <select id="category"></select>
-      </label>
-
       <button class="primary" id="start">Start (Deal 3)</button>
       <button id="viewCompleted">Completed Prompts</button>
+      <button id="viewDeck">View Full Deck</button>
       <button class="warn" id="reset">Reset / Reshuffle</button>
     </div>
 
     <div class="meta">
-      <div>Remaining in current pool: <strong id="remaining">—</strong></div>
+      <div>Remaining in current deck: <strong id="remaining">—</strong></div>
       <div>Completed: <strong id="score">0</strong></div>
     </div>
 
@@ -128,21 +130,36 @@
   </main>
 
   <!-- Completed modal -->
-  <div class="modalBackdrop" id="backdrop" role="dialog" aria-modal="true" aria-labelledby="completedTitle">
+  <div class="modalBackdrop" id="backdropCompleted" role="dialog" aria-modal="true" aria-labelledby="completedTitle">
     <div class="modal">
       <div class="modalHeader">
         <h2 id="completedTitle">Completed Prompts</h2>
-        <button class="btnSmall" id="closeModal" aria-label="Close">Close</button>
+        <button class="btnSmall" id="closeCompleted" aria-label="Close">Close</button>
       </div>
       <div class="modalBody">
-        <div id="completedEmpty" style="color:#666; font-size: 13px; display:none;">
-          Nothing completed yet. Go use some prompts.
-        </div>
+        <div id="completedEmpty" class="muted" style="display:none;">Nothing completed yet. Go use some prompts.</div>
         <ol id="completedList"></ol>
       </div>
       <div class="modalFooter">
         <button class="btnSmall" id="copyCompleted">Copy list</button>
         <button class="btnSmall warn" id="clearCompleted">Clear completed</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full deck modal -->
+  <div class="modalBackdrop" id="backdropDeck" role="dialog" aria-modal="true" aria-labelledby="deckTitle">
+    <div class="modal">
+      <div class="modalHeader">
+        <h2 id="deckTitle">Full Deck</h2>
+        <button class="btnSmall" id="closeDeck" aria-label="Close">Close</button>
+      </div>
+      <div class="modalBody">
+        <div class="muted">All categories and prompts (read-only).</div>
+        <div id="deckContainer"></div>
+      </div>
+      <div class="modalFooter">
+        <button class="btnSmall" id="copyDeck">Copy full deck</button>
       </div>
     </div>
   </div>
@@ -272,7 +289,6 @@
     ];
 
     // ---- Helpers ----
-    function uniq(arr){ return Array.from(new Set(arr)); }
     function shuffle(array){
       for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -281,10 +297,9 @@
       return array;
     }
 
-    // ---- State (category-based pool, no-repeat shoe) ----
-    const LS_KEY = "ecc_game_v2";
+    // ---- State (single full deck) ----
+    const LS_KEY = "ecc_game_v3";
     const DEFAULT_STATE = {
-      category: "All Categories",
       remaining: [],   // array of card indexes
       used: [],        // array of card indexes
       score: 0,
@@ -297,31 +312,23 @@
         const raw = localStorage.getItem(LS_KEY);
         if (!raw) return null;
         const st = JSON.parse(raw);
-        // Basic validation
         if (!st || !Array.isArray(st.completed)) return null;
         return st;
       } catch { return null; }
     }
-
     function saveState(st){
       localStorage.setItem(LS_KEY, JSON.stringify(st));
     }
 
-    function buildPool(category){
-      const pool = (category === "All Categories")
-        ? DECK.map((_, idx) => idx)
-        : DECK.map((c, idx) => ({c, idx}))
-              .filter(x => x.c.cat === category)
-              .map(x => x.idx);
-      return shuffle(pool.slice());
+    function buildFullDeck(){
+      return shuffle(DECK.map((_, idx) => idx));
     }
 
     function ensurePool(st){
       if (!Array.isArray(st.remaining) || st.remaining.length === 0) {
-        // recycle used back into remaining
         const recycled = Array.isArray(st.used) ? st.used.slice() : [];
         st.used = [];
-        st.remaining = shuffle(recycled.length ? recycled : buildPool(st.category));
+        st.remaining = shuffle(recycled.length ? recycled : buildFullDeck());
       }
       return st;
     }
@@ -334,13 +341,12 @@
     }
 
     function returnToDeck(st, idx){
-      // put it back into remaining (then shuffle lightly to avoid immediate re-draw patterns)
       if (typeof idx !== "number") return;
-      // remove from used if present
       st.used = (st.used || []).filter(x => x !== idx);
       st.remaining = st.remaining || [];
       st.remaining.push(idx);
-      // light shuffle: Fisher-Yates over last ~10 for speed (still good randomness)
+
+      // light shuffle of the tail to avoid predictable redraws
       const n = st.remaining.length;
       const start = Math.max(0, n - 12);
       for (let i = n - 1; i > start; i--) {
@@ -349,21 +355,28 @@
       }
     }
 
-    // ---- UI render ----
+    // ---- UI elements ----
     const elCards = document.getElementById("cards");
     const elRemaining = document.getElementById("remaining");
     const elScore = document.getElementById("score");
-    const elCategory = document.getElementById("category");
     const elStart = document.getElementById("start");
     const elReset = document.getElementById("reset");
     const elViewCompleted = document.getElementById("viewCompleted");
+    const elViewDeck = document.getElementById("viewDeck");
 
-    const elBackdrop = document.getElementById("backdrop");
-    const elCloseModal = document.getElementById("closeModal");
+    // Completed modal
+    const elBackdropCompleted = document.getElementById("backdropCompleted");
+    const elCloseCompleted = document.getElementById("closeCompleted");
     const elCompletedList = document.getElementById("completedList");
     const elCompletedEmpty = document.getElementById("completedEmpty");
     const elCopyCompleted = document.getElementById("copyCompleted");
     const elClearCompleted = document.getElementById("clearCompleted");
+
+    // Deck modal
+    const elBackdropDeck = document.getElementById("backdropDeck");
+    const elCloseDeck = document.getElementById("closeDeck");
+    const elDeckContainer = document.getElementById("deckContainer");
+    const elCopyDeck = document.getElementById("copyDeck");
 
     function render(st){
       elRemaining.textContent = String((st.remaining || []).length);
@@ -372,7 +385,6 @@
       elCards.innerHTML = "";
 
       if (!Array.isArray(st.active) || st.active.length === 0) {
-        // Pre-start blank state
         const div = document.createElement("div");
         div.className = "card";
         div.innerHTML = `
@@ -406,7 +418,7 @@
       });
     }
 
-    // ---- Modal ----
+    // ---- Completed modal ----
     function openCompleted(st){
       const items = st.completed || [];
       elCompletedList.innerHTML = "";
@@ -420,30 +432,64 @@
           elCompletedList.appendChild(li);
         });
       }
-      elBackdrop.style.display = "flex";
+      elBackdropCompleted.style.display = "flex";
     }
-    function closeCompleted(){
-      elBackdrop.style.display = "none";
+    function closeCompleted(){ elBackdropCompleted.style.display = "none"; }
+
+    // ---- Deck modal ----
+    function groupDeck(){
+      const map = new Map();
+      for (const c of DECK) {
+        if (!map.has(c.cat)) map.set(c.cat, []);
+        map.get(c.cat).push(c.text);
+      }
+      return map;
     }
+
+    function openDeck(){
+      elDeckContainer.innerHTML = "";
+      const grouped = groupDeck();
+
+      // keep category order as it appears in DECK (stable)
+      const seen = new Set();
+      const order = [];
+      for (const c of DECK) {
+        if (!seen.has(c.cat)) { seen.add(c.cat); order.push(c.cat); }
+      }
+
+      order.forEach(cat => {
+        const title = document.createElement("div");
+        title.className = "sectionTitle";
+        title.textContent = cat;
+        elDeckContainer.appendChild(title);
+
+        const ol = document.createElement("ol");
+        ol.className = "deckList";
+        grouped.get(cat).forEach(txt => {
+          const li = document.createElement("li");
+          li.textContent = txt;
+          ol.appendChild(li);
+        });
+        elDeckContainer.appendChild(ol);
+      });
+
+      elBackdropDeck.style.display = "flex";
+    }
+    function closeDeck(){ elBackdropDeck.style.display = "none"; }
 
     // ---- Game actions ----
     function startGame(st){
-      // Reset the pool for current category, deal 3
-      st.category = elCategory.value;
-      st.remaining = buildPool(st.category);
+      st.remaining = buildFullDeck();
       st.used = [];
       st.active = [];
-      for (let i=0; i<3; i++){
-        st.active.push(drawIndex(st));
-      }
+      for (let i=0; i<3; i++) st.active.push(drawIndex(st));
       saveState(st);
       render(st);
     }
 
     function resetAll(){
       const st = structuredClone(DEFAULT_STATE);
-      st.category = elCategory.value;
-      st.remaining = buildPool(st.category);
+      st.remaining = buildFullDeck();
       saveState(st);
       render(st);
     }
@@ -465,7 +511,6 @@
       st.completed = st.completed || [];
       st.completed.push({ cat: card.cat, text: card.text, ts: Date.now() });
 
-      // Replace the completed card with a new one
       const newIdx = drawIndex(st);
       st.active[slot] = newIdx;
 
@@ -475,43 +520,21 @@
 
     // ---- Init ----
     function init(){
-      // Build category dropdown
-      const cats = uniq(DECK.map(c => c.cat)).sort();
-      ["All Categories", ...cats].forEach(c => {
-        const opt = document.createElement("option");
-        opt.value = c;
-        opt.textContent = c;
-        elCategory.appendChild(opt);
-      });
-
-      // Load state
       let st = loadState();
       if (!st) st = structuredClone(DEFAULT_STATE);
 
-      // Ensure category UI matches state
-      if (st.category && ["All Categories", ...cats].includes(st.category)) {
-        elCategory.value = st.category;
-      } else {
-        st.category = elCategory.value;
+      // Ensure deck exists
+      if (!Array.isArray(st.remaining) || st.remaining.length === 0) {
+        st.remaining = buildFullDeck();
       }
-
-      // Ensure pools are sane for current category
-      if (!Array.isArray(st.remaining) || st.category !== elCategory.value) {
-        st.category = elCategory.value;
-        st.remaining = buildPool(st.category);
-        st.used = [];
-        st.active = []; // force re-start to avoid category mismatch confusion
-      } else {
-        // If they previously started, keep going; just ensure pool is replenishable
-        st = ensurePool(st);
-      }
+      st = ensurePool(st);
 
       saveState(st);
       render(st);
 
       // Events
       elStart.addEventListener("click", () => {
-        let st2 = loadState() || structuredClone(DEFAULT_STATE);
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
         startGame(st2);
       });
 
@@ -519,27 +542,15 @@
         resetAll();
       });
 
-      elCategory.addEventListener("change", () => {
-        // Changing category does NOT auto-start; it resets active hand to "ready" state
-        let st2 = loadState() || structuredClone(DEFAULT_STATE);
-        st2.category = elCategory.value;
-        st2.remaining = buildPool(st2.category);
-        st2.used = [];
-        st2.active = [];
-        saveState(st2);
-        render(st2);
-      });
-
       elCards.addEventListener("click", (e) => {
         const btn = e.target.closest("button");
         if (!btn) return;
 
         const action = btn.getAttribute("data-action");
-        const slotStr = btn.getAttribute("data-slot");
-        const slot = Number(slotStr);
+        const slot = Number(btn.getAttribute("data-slot"));
         if (!Number.isFinite(slot)) return;
 
-        let st2 = loadState() || structuredClone(DEFAULT_STATE);
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
         if (!Array.isArray(st2.active) || st2.active.length !== 3) return;
 
         if (action === "redraw") redrawOne(st2, slot);
@@ -551,13 +562,19 @@
         openCompleted(st2);
       });
 
-      elCloseModal.addEventListener("click", closeCompleted);
-      elBackdrop.addEventListener("click", (e) => {
-        if (e.target === elBackdrop) closeCompleted();
+      elCloseCompleted.addEventListener("click", closeCompleted);
+      elBackdropCompleted.addEventListener("click", (e) => {
+        if (e.target === elBackdropCompleted) closeCompleted();
+      });
+
+      elViewDeck.addEventListener("click", openDeck);
+      elCloseDeck.addEventListener("click", closeDeck);
+      elBackdropDeck.addEventListener("click", (e) => {
+        if (e.target === elBackdropDeck) closeDeck();
       });
 
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") closeCompleted();
+        if (e.key === "Escape") { closeCompleted(); closeDeck(); }
       });
 
       elCopyCompleted.addEventListener("click", async () => {
@@ -575,12 +592,36 @@
       });
 
       elClearCompleted.addEventListener("click", () => {
-        let st2 = loadState() || structuredClone(DEFAULT_STATE);
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
         st2.completed = [];
         st2.score = 0;
         saveState(st2);
         openCompleted(st2);
         elScore.textContent = "0";
+      });
+
+      elCopyDeck.addEventListener("click", async () => {
+        const lines = [];
+        const seen = new Set();
+        const order = [];
+        for (const c of DECK) {
+          if (!seen.has(c.cat)) { seen.add(c.cat); order.push(c.cat); }
+        }
+        for (const cat of order) {
+          lines.push(cat);
+          const items = DECK.filter(x => x.cat === cat).map(x => `- ${x.text}`);
+          lines.push(...items);
+          lines.push("");
+        }
+        const text = lines.join("\n").trim();
+        try {
+          await navigator.clipboard.writeText(text);
+          elCopyDeck.textContent = "Copied!";
+          setTimeout(() => elCopyDeck.textContent = "Copy full deck", 900);
+        } catch {
+          elCopyDeck.textContent = "Copy failed";
+          setTimeout(() => elCopyDeck.textContent = "Copy full deck", 900);
+        }
       });
     }
 
@@ -588,3 +629,4 @@
   </script>
 </body>
 </html>
+
