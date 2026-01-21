@@ -66,6 +66,7 @@
       font-size: 12px; padding: 2px 6px; border-radius: 8px;
       background: rgba(0,0,0,.06);
     }
+    .muted { color:#666; font-size: 13px; }
 
     /* Modal */
     .modalBackdrop {
@@ -99,50 +100,55 @@
     }
     .deckList { margin: 0; padding-left: 18px; }
     .deckList li { margin: 6px 0; line-height: 1.25; }
-    .muted { color:#666; font-size: 13px; }
+
+    /* Completed list formatting */
+    .completedItem { margin: 8px 0; line-height: 1.25; }
+    .completedReflection { font-weight: 700; }
   </style>
 </head>
 <body>
   <header>
     <h1>Elevator Conversation Cards</h1>
-    <p class="sub">Start the round, then complete prompts as you use them. Keep it natural.</p>
+    <p class="sub">Start a round, use prompts naturally, then end with one reflection.</p>
   </header>
 
   <main>
     <div class="row">
-      <button class="primary" id="start">Start (Deal 3)</button>
-      <button id="viewCompleted">Completed Prompts</button>
+      <button class="primary" id="start">Start Round (Deal 3)</button>
+      <button id="endRound" disabled>End Conversation</button>
+      <button id="viewCompleted">Review Log</button>
       <button id="viewDeck">View Full Deck</button>
-      <button class="warn" id="reset">Reset / Reshuffle</button>
+      <button class="warn" id="reset">Reset Game</button>
     </div>
 
     <div class="meta">
-      <div>Remaining in current deck: <strong id="remaining">—</strong></div>
+      <div>Remaining in deck: <strong id="remaining">—</strong></div>
       <div>Completed: <strong id="score">0</strong></div>
+      <div>Round: <strong id="round">0</strong></div>
     </div>
 
     <section class="cards" id="cards"></section>
 
     <div class="footer">
       <div><strong>Tip:</strong> If a prompt feels awkward, tap <span class="kbd">Redraw</span> on that card to swap it out. (The old one goes back into the deck.)</div>
-      <div style="margin-top:8px;">Works offline if you save this page to your home screen (browser menu).</div>
+      <div style="margin-top:8px;">Used prompts stay out of rotation until you reset the game.</div>
     </div>
   </main>
 
-  <!-- Completed modal -->
-  <div class="modalBackdrop" id="backdropCompleted" role="dialog" aria-modal="true" aria-labelledby="completedTitle">
+  <!-- Review Log modal -->
+  <div class="modalBackdrop" id="backdropLog" role="dialog" aria-modal="true" aria-labelledby="logTitle">
     <div class="modal">
       <div class="modalHeader">
-        <h2 id="completedTitle">Completed Prompts</h2>
-        <button class="btnSmall" id="closeCompleted" aria-label="Close">Close</button>
+        <h2 id="logTitle">Review Log</h2>
+        <button class="btnSmall" id="closeLog" aria-label="Close">Close</button>
       </div>
       <div class="modalBody">
-        <div id="completedEmpty" class="muted" style="display:none;">Nothing completed yet. Go use some prompts.</div>
-        <ol id="completedList"></ol>
+        <div id="logEmpty" class="muted" style="display:none;">Nothing logged yet. Start a round and complete a prompt.</div>
+        <ol id="logList"></ol>
       </div>
       <div class="modalFooter">
-        <button class="btnSmall" id="copyCompleted">Copy list</button>
-        <button class="btnSmall warn" id="clearCompleted">Clear completed</button>
+        <button class="btnSmall" id="copyLog">Copy log</button>
+        <button class="btnSmall warn" id="clearLog">Clear log + score</button>
       </div>
     </div>
   </div>
@@ -164,8 +170,31 @@
     </div>
   </div>
 
+  <!-- Reflection modal -->
+  <div class="modalBackdrop" id="backdropReflection" role="dialog" aria-modal="true" aria-labelledby="reflectionTitle">
+    <div class="modal">
+      <div class="modalHeader">
+        <h2 id="reflectionTitle">Reflections and Takeaways</h2>
+        <button class="btnSmall" id="closeReflection" aria-label="Close">Close</button>
+      </div>
+      <div class="modalBody">
+        <div class="muted">Answer this out loud as a group before you rotate.</div>
+        <div class="card" style="margin-top:12px;">
+          <div class="tagRow">
+            <span class="tag" id="reflectionTag">Round —</span>
+          </div>
+          <p class="text" id="reflectionText">—</p>
+          <p class="small">When you are done, close this window and rotate.</p>
+        </div>
+      </div>
+      <div class="modalFooter">
+        <button class="btnSmall" id="copyReflection">Copy reflection</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    // --- Deck data (100 cards) ---
+    // --- Main deck (action prompts) ---
     const DECK = [
       // I. Entry & Opening Moves
       {cat:"Entry & Opening", text:"Begin with a curiosity, not a claim."},
@@ -274,18 +303,23 @@
       {cat:"Playful Disruption", text:"Say one thing you don’t have figured out."},
       {cat:"Playful Disruption", text:"Smile before you speak, then ignore it."},
       {cat:"Playful Disruption", text:"Deliver one line as if you’re confiding a secret."},
+    ];
 
-      // X. Meta & Reflection
-      {cat:"Meta Reflection", text:"Name the move you just made."},
-      {cat:"Meta Reflection", text:"Say what shifted in the conversation."},
-      {cat:"Meta Reflection", text:"Notice what energized the group."},
-      {cat:"Meta Reflection", text:"Say what you’re trying not to do right now."},
-      {cat:"Meta Reflection", text:"Identify what made this feel easier or harder."},
-      {cat:"Meta Reflection", text:"Say what kind of listener you’re being."},
-      {cat:"Meta Reflection", text:"Name the moment you felt most engaged."},
-      {cat:"Meta Reflection", text:"Say what you’re curious to hear next."},
-      {cat:"Meta Reflection", text:"Acknowledge someone else’s contribution explicitly."},
-      {cat:"Meta Reflection", text:"End by saying what you’d like to carry forward."},
+    // --- Reflection deck (end-cap) ---
+    const REFLECTION_CATEGORY = "Reflections and Takeaways";
+    const REFLECTION_DECK = [
+      {cat: REFLECTION_CATEGORY, text:"What should we carry into the next conversation?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What did you learn about how you come across in a first meeting?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What question do you want to try asking in the next round?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What made this conversation easier than expected?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What made this conversation harder than expected?"}, 
+      {cat: REFLECTION_CATEGORY, text:"Name one moment you felt genuinely engaged. What caused it?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What overlap did you notice that you did not expect?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What is one phrase you heard that you want to borrow (ethically)?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What is one small adjustment you will make in the next round?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What is one useful next step you could take after class, even if it is tiny?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What is one thing someone did that made it easier to talk?"}, 
+      {cat: REFLECTION_CATEGORY, text:"What did you do well in this round that you should repeat?"}
     ];
 
     // ---- Helpers ----
@@ -297,14 +331,19 @@
       return array;
     }
 
-    // ---- State (single full deck) ----
-    const LS_KEY = "ecc_game_v3";
+    // ---- State ----
+    // Used main cards remain out of rotation until reset. We do NOT recycle used.
+    const LS_KEY = "ecc_game_v4";
     const DEFAULT_STATE = {
-      remaining: [],   // array of card indexes
-      used: [],        // array of card indexes
+      remaining: [],        // main deck indexes
+      used: [],             // main deck indexes used (completed or dealt)
       score: 0,
-      active: [],      // 3 active card indexes
-      completed: []    // list of completed card objects {cat,text,ts}
+      active: [],           // 3 main deck indexes currently in hand
+      completed: [],        // log entries
+      round: 0,
+      reflectionDone: true, // true when no active round OR reflection already taken
+      reflectionRemaining: [], // reflection indexes
+      reflectionUsed: []       // reflection indexes
     };
 
     function loadState(){
@@ -320,33 +359,45 @@
       localStorage.setItem(LS_KEY, JSON.stringify(st));
     }
 
-    function buildFullDeck(){
+    function buildMainDeck(){
       return shuffle(DECK.map((_, idx) => idx));
     }
+    function buildReflectionDeck(){
+      return shuffle(REFLECTION_DECK.map((_, idx) => idx));
+    }
 
-    function ensurePool(st){
+    function ensureDecks(st){
       if (!Array.isArray(st.remaining) || st.remaining.length === 0) {
-        const recycled = Array.isArray(st.used) ? st.used.slice() : [];
-        st.used = [];
-        st.remaining = shuffle(recycled.length ? recycled : buildFullDeck());
+        // If empty, we do not recycle. Keep empty.
+        st.remaining = Array.isArray(st.remaining) ? st.remaining : [];
       }
+      if (!Array.isArray(st.used)) st.used = [];
+
+      if (!Array.isArray(st.reflectionRemaining) || st.reflectionRemaining.length === 0) {
+        // Reflections can recycle for convenience
+        const recycled = Array.isArray(st.reflectionUsed) ? st.reflectionUsed.slice() : [];
+        st.reflectionUsed = [];
+        st.reflectionRemaining = shuffle(recycled.length ? recycled : buildReflectionDeck());
+      }
+      if (!Array.isArray(st.reflectionUsed)) st.reflectionUsed = [];
+
       return st;
     }
 
-    function drawIndex(st){
-      st = ensurePool(st);
+    function drawMainIndex(st){
+      if (!Array.isArray(st.remaining) || st.remaining.length === 0) return null;
       const idx = st.remaining.pop();
       st.used.push(idx);
       return idx;
     }
 
-    function returnToDeck(st, idx){
+    function returnMainToDeck(st, idx){
       if (typeof idx !== "number") return;
+      // remove from used, put back in remaining, light shuffle tail
       st.used = (st.used || []).filter(x => x !== idx);
       st.remaining = st.remaining || [];
       st.remaining.push(idx);
 
-      // light shuffle of the tail to avoid predictable redraws
       const n = st.remaining.length;
       const start = Math.max(0, n - 12);
       for (let i = n - 1; i > start; i--) {
@@ -355,22 +406,32 @@
       }
     }
 
-    // ---- UI elements ----
+    function drawReflectionIndex(st){
+      st = ensureDecks(st);
+      if (!Array.isArray(st.reflectionRemaining) || st.reflectionRemaining.length === 0) return null;
+      const idx = st.reflectionRemaining.pop();
+      st.reflectionUsed.push(idx);
+      return idx;
+    }
+
+    // ---- UI ----
     const elCards = document.getElementById("cards");
     const elRemaining = document.getElementById("remaining");
     const elScore = document.getElementById("score");
+    const elRound = document.getElementById("round");
     const elStart = document.getElementById("start");
+    const elEndRound = document.getElementById("endRound");
     const elReset = document.getElementById("reset");
     const elViewCompleted = document.getElementById("viewCompleted");
     const elViewDeck = document.getElementById("viewDeck");
 
-    // Completed modal
-    const elBackdropCompleted = document.getElementById("backdropCompleted");
-    const elCloseCompleted = document.getElementById("closeCompleted");
-    const elCompletedList = document.getElementById("completedList");
-    const elCompletedEmpty = document.getElementById("completedEmpty");
-    const elCopyCompleted = document.getElementById("copyCompleted");
-    const elClearCompleted = document.getElementById("clearCompleted");
+    // Log modal
+    const elBackdropLog = document.getElementById("backdropLog");
+    const elCloseLog = document.getElementById("closeLog");
+    const elLogList = document.getElementById("logList");
+    const elLogEmpty = document.getElementById("logEmpty");
+    const elCopyLog = document.getElementById("copyLog");
+    const elClearLog = document.getElementById("clearLog");
 
     // Deck modal
     const elBackdropDeck = document.getElementById("backdropDeck");
@@ -378,9 +439,26 @@
     const elDeckContainer = document.getElementById("deckContainer");
     const elCopyDeck = document.getElementById("copyDeck");
 
+    // Reflection modal
+    const elBackdropReflection = document.getElementById("backdropReflection");
+    const elCloseReflection = document.getElementById("closeReflection");
+    const elReflectionTag = document.getElementById("reflectionTag");
+    const elReflectionText = document.getElementById("reflectionText");
+    const elCopyReflection = document.getElementById("copyReflection");
+
+    function setEndRoundEnabled(st){
+      const activeRound = Array.isArray(st.active) && st.active.length === 3;
+      elEndRound.disabled = !(activeRound && !st.reflectionDone);
+    }
+
     function render(st){
+      st = ensureDecks(st);
+
       elRemaining.textContent = String((st.remaining || []).length);
       elScore.textContent = String(st.score || 0);
+      elRound.textContent = String(st.round || 0);
+
+      setEndRoundEnabled(st);
 
       elCards.innerHTML = "";
 
@@ -391,11 +469,24 @@
           <div class="tagRow">
             <span class="tag">Ready</span>
           </div>
-          <p class="text">Tap <strong>Start (Deal 3)</strong> to begin.</p>
+          <p class="text">Tap <strong>Start Round (Deal 3)</strong> to begin.</p>
           <p class="small">You’ll get three prompts. When you use one, tap <strong>Complete</strong> to replace it.</p>
         `;
         elCards.appendChild(div);
         return;
+      }
+
+      if ((st.remaining || []).length === 0) {
+        const warn = document.createElement("div");
+        warn.className = "card";
+        warn.innerHTML = `
+          <div class="tagRow">
+            <span class="tag">Deck empty</span>
+          </div>
+          <p class="text">The main deck is out of cards.</p>
+          <p class="small">You can keep talking without prompts, or reset the game to reshuffle.</p>
+        `;
+        elCards.appendChild(warn);
       }
 
       st.active.forEach((idx, slot) => {
@@ -418,23 +509,31 @@
       });
     }
 
-    // ---- Completed modal ----
-    function openCompleted(st){
+    // ---- Log modal ----
+    function openLog(st){
       const items = st.completed || [];
-      elCompletedList.innerHTML = "";
+      elLogList.innerHTML = "";
       if (items.length === 0) {
-        elCompletedEmpty.style.display = "block";
+        elLogEmpty.style.display = "block";
       } else {
-        elCompletedEmpty.style.display = "none";
+        elLogEmpty.style.display = "none";
         items.slice().reverse().forEach(item => {
           const li = document.createElement("li");
-          li.textContent = `${item.text} (${item.cat})`;
-          elCompletedList.appendChild(li);
+          li.className = "completedItem";
+
+          if (item.type === "reflection") {
+            li.classList.add("completedReflection");
+            li.textContent = `Round ${item.round} Reflection: ${item.text}`;
+          } else {
+            li.textContent = `${item.text} (${item.cat})`;
+          }
+
+          elLogList.appendChild(li);
         });
       }
-      elBackdropCompleted.style.display = "flex";
+      elBackdropLog.style.display = "flex";
     }
-    function closeCompleted(){ elBackdropCompleted.style.display = "none"; }
+    function closeLog(){ elBackdropLog.style.display = "none"; }
 
     // ---- Deck modal ----
     function groupDeck(){
@@ -445,17 +544,19 @@
       }
       return map;
     }
-
-    function openDeck(){
-      elDeckContainer.innerHTML = "";
-      const grouped = groupDeck();
-
-      // keep category order as it appears in DECK (stable)
+    function categoryOrder(){
       const seen = new Set();
       const order = [];
       for (const c of DECK) {
         if (!seen.has(c.cat)) { seen.add(c.cat); order.push(c.cat); }
       }
+      return order;
+    }
+    function openDeck(){
+      elDeckContainer.innerHTML = "";
+
+      const grouped = groupDeck();
+      const order = categoryOrder();
 
       order.forEach(cat => {
         const title = document.createElement("div");
@@ -473,31 +574,73 @@
         elDeckContainer.appendChild(ol);
       });
 
+      // Add reflections deck
+      const rTitle = document.createElement("div");
+      rTitle.className = "sectionTitle";
+      rTitle.textContent = REFLECTION_CATEGORY;
+      elDeckContainer.appendChild(rTitle);
+
+      const rOl = document.createElement("ol");
+      rOl.className = "deckList";
+      REFLECTION_DECK.forEach(r => {
+        const li = document.createElement("li");
+        li.textContent = r.text;
+        rOl.appendChild(li);
+      });
+      elDeckContainer.appendChild(rOl);
+
       elBackdropDeck.style.display = "flex";
     }
     function closeDeck(){ elBackdropDeck.style.display = "none"; }
 
+    // ---- Reflection modal ----
+    function openReflectionModal(roundNum, reflectionText){
+      elReflectionTag.textContent = `Round ${roundNum}`;
+      elReflectionText.textContent = reflectionText;
+      elBackdropReflection.style.display = "flex";
+    }
+    function closeReflection(){ elBackdropReflection.style.display = "none"; }
+
     // ---- Game actions ----
-    function startGame(st){
-      st.remaining = buildFullDeck();
-      st.used = [];
+    function startRound(st){
+      st = ensureDecks(st);
+
+      // If main deck not initialized yet, initialize
+      if (!Array.isArray(st.remaining) || st.remaining.length === 0 && (st.used || []).length === 0) {
+        st.remaining = buildMainDeck();
+        st.used = [];
+      }
+
+      // Deal 3 into active (clear any existing active hand)
       st.active = [];
-      for (let i=0; i<3; i++) st.active.push(drawIndex(st));
+
+      // If fewer than 3 left, deal what we can
+      for (let i=0; i<3; i++){
+        const idx = drawMainIndex(st);
+        if (idx === null) break;
+        st.active.push(idx);
+      }
+
+      st.round = (st.round || 0) + 1;
+      st.reflectionDone = false;
+
       saveState(st);
       render(st);
     }
 
-    function resetAll(){
-      const st = structuredClone(DEFAULT_STATE);
-      st.remaining = buildFullDeck();
-      saveState(st);
-      render(st);
+    function resetGameConfirmed(){
+      localStorage.removeItem(LS_KEY);
+      // hard reload is simplest to wipe any in-memory state
+      location.reload();
     }
 
     function redrawOne(st, slot){
       const oldIdx = st.active[slot];
-      returnToDeck(st, oldIdx);
-      const newIdx = drawIndex(st);
+      returnMainToDeck(st, oldIdx);
+
+      const newIdx = drawMainIndex(st);
+      if (newIdx === null) return; // deck empty
+
       st.active[slot] = newIdx;
       saveState(st);
       render(st);
@@ -509,13 +652,43 @@
 
       st.score = (st.score || 0) + 1;
       st.completed = st.completed || [];
-      st.completed.push({ cat: card.cat, text: card.text, ts: Date.now() });
+      st.completed.push({ type:"prompt", cat: card.cat, text: card.text, ts: Date.now() });
 
-      const newIdx = drawIndex(st);
-      st.active[slot] = newIdx;
+      // Replace with a new card if possible; otherwise remove slot
+      const newIdx = drawMainIndex(st);
+      if (newIdx === null) {
+        // remove the slot from active (keep UI stable if fewer than 3)
+        st.active[slot] = null;
+        st.active = st.active.filter(x => x !== null);
+      } else {
+        st.active[slot] = newIdx;
+      }
 
       saveState(st);
       render(st);
+    }
+
+    function endConversation(st){
+      if (st.reflectionDone) return;
+      const rIdx = drawReflectionIndex(st);
+      if (rIdx === null) return;
+
+      const r = REFLECTION_DECK[rIdx];
+
+      st.completed = st.completed || [];
+      st.completed.push({
+        type: "reflection",
+        cat: r.cat,
+        text: r.text,
+        round: st.round || 0,
+        ts: Date.now()
+      });
+
+      st.reflectionDone = true;
+
+      saveState(st);
+      render(st);
+      openReflectionModal(st.round || 0, r.text);
     }
 
     // ---- Init ----
@@ -523,23 +696,34 @@
       let st = loadState();
       if (!st) st = structuredClone(DEFAULT_STATE);
 
-      // Ensure deck exists
-      if (!Array.isArray(st.remaining) || st.remaining.length === 0) {
-        st.remaining = buildFullDeck();
+      // Initialize main deck only if never set
+      if (!Array.isArray(st.remaining) || (!st.remaining.length && !(st.used || []).length)) {
+        st.remaining = buildMainDeck();
+        st.used = [];
       }
-      st = ensurePool(st);
+      if (!Array.isArray(st.reflectionRemaining) || (!st.reflectionRemaining.length && !(st.reflectionUsed || []).length)) {
+        st.reflectionRemaining = buildReflectionDeck();
+        st.reflectionUsed = [];
+      }
 
+      st = ensureDecks(st);
       saveState(st);
       render(st);
 
       // Events
       elStart.addEventListener("click", () => {
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
-        startGame(st2);
+        startRound(st2);
+      });
+
+      elEndRound.addEventListener("click", () => {
+        const st2 = loadState() || structuredClone(DEFAULT_STATE);
+        endConversation(st2);
       });
 
       elReset.addEventListener("click", () => {
-        resetAll();
+        const ok = confirm("Reset the game? This clears score, log, rounds, and reshuffles the deck.");
+        if (ok) resetGameConfirmed();
       });
 
       elCards.addEventListener("click", (e) => {
@@ -551,7 +735,7 @@
         if (!Number.isFinite(slot)) return;
 
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
-        if (!Array.isArray(st2.active) || st2.active.length !== 3) return;
+        if (!Array.isArray(st2.active) || st2.active.length === 0) return;
 
         if (action === "redraw") redrawOne(st2, slot);
         if (action === "complete") completeOne(st2, slot);
@@ -559,12 +743,12 @@
 
       elViewCompleted.addEventListener("click", () => {
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
-        openCompleted(st2);
+        openLog(st2);
       });
 
-      elCloseCompleted.addEventListener("click", closeCompleted);
-      elBackdropCompleted.addEventListener("click", (e) => {
-        if (e.target === elBackdropCompleted) closeCompleted();
+      elCloseLog.addEventListener("click", closeLog);
+      elBackdropLog.addEventListener("click", (e) => {
+        if (e.target === elBackdropLog) closeLog();
       });
 
       elViewDeck.addEventListener("click", openDeck);
@@ -573,46 +757,53 @@
         if (e.target === elBackdropDeck) closeDeck();
       });
 
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") { closeCompleted(); closeDeck(); }
+      elCloseReflection.addEventListener("click", closeReflection);
+      elBackdropReflection.addEventListener("click", (e) => {
+        if (e.target === elBackdropReflection) closeReflection();
       });
 
-      elCopyCompleted.addEventListener("click", async () => {
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") { closeLog(); closeDeck(); closeReflection(); }
+      });
+
+      elCopyLog.addEventListener("click", async () => {
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
         const items = st2.completed || [];
-        const text = items.map((it, i) => `${i+1}. ${it.text} (${it.cat})`).join("\n");
+        const lines = items.map((it, i) => {
+          if (it.type === "reflection") return `${i+1}. [Round ${it.round} Reflection] ${it.text}`;
+          return `${i+1}. ${it.text} (${it.cat})`;
+        });
+        const text = lines.join("\n");
         try {
           await navigator.clipboard.writeText(text || "");
-          elCopyCompleted.textContent = "Copied!";
-          setTimeout(() => elCopyCompleted.textContent = "Copy list", 900);
+          elCopyLog.textContent = "Copied!";
+          setTimeout(() => elCopyLog.textContent = "Copy log", 900);
         } catch {
-          elCopyCompleted.textContent = "Copy failed";
-          setTimeout(() => elCopyCompleted.textContent = "Copy list", 900);
+          elCopyLog.textContent = "Copy failed";
+          setTimeout(() => elCopyLog.textContent = "Copy log", 900);
         }
       });
 
-      elClearCompleted.addEventListener("click", () => {
+      elClearLog.addEventListener("click", () => {
         const st2 = loadState() || structuredClone(DEFAULT_STATE);
         st2.completed = [];
         st2.score = 0;
         saveState(st2);
-        openCompleted(st2);
-        elScore.textContent = "0";
+        openLog(st2);
+        render(st2);
       });
 
       elCopyDeck.addEventListener("click", async () => {
         const lines = [];
-        const seen = new Set();
-        const order = [];
-        for (const c of DECK) {
-          if (!seen.has(c.cat)) { seen.add(c.cat); order.push(c.cat); }
-        }
+        const order = categoryOrder();
         for (const cat of order) {
           lines.push(cat);
           const items = DECK.filter(x => x.cat === cat).map(x => `- ${x.text}`);
           lines.push(...items);
           lines.push("");
         }
+        lines.push(REFLECTION_CATEGORY);
+        lines.push(...REFLECTION_DECK.map(r => `- ${r.text}`));
         const text = lines.join("\n").trim();
         try {
           await navigator.clipboard.writeText(text);
@@ -623,10 +814,21 @@
           setTimeout(() => elCopyDeck.textContent = "Copy full deck", 900);
         }
       });
+
+      elCopyReflection.addEventListener("click", async () => {
+        const txt = elReflectionText.textContent || "";
+        try {
+          await navigator.clipboard.writeText(txt);
+          elCopyReflection.textContent = "Copied!";
+          setTimeout(() => elCopyReflection.textContent = "Copy reflection", 900);
+        } catch {
+          elCopyReflection.textContent = "Copy failed";
+          setTimeout(() => elCopyReflection.textContent = "Copy reflection", 900);
+        }
+      });
     }
 
     init();
   </script>
 </body>
 </html>
-
